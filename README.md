@@ -65,6 +65,7 @@ docker-compose up -d
 
 停止项目
 docker-compose down
+
 # 2. 运行项目
 npm run dev
 
