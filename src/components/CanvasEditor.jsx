@@ -173,7 +173,7 @@ export function CanvasEditor({
         onRegionsChange?.(regions);
     };
 
-    const resetHistory = (canvas) => {
+    const resetHistory = () => {
         historyRef.current = [[]];
         historyStepRef.current = 0;
         setHistoryLength(1);
@@ -474,7 +474,7 @@ export function CanvasEditor({
                 fabricCanvas.requestRenderAll();
                 fabricCanvas.calcOffset();
 
-                resetHistory(fabricCanvas);
+                resetHistory();
                 scheduleRectInfoUpdate(null);
                 onRegionsChange?.([]);
                 viewModeRef.current = 'fit';

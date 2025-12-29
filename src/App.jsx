@@ -7,8 +7,10 @@ import { Button } from './components/ui/Button';
 import {
   editImage,
   editImageViaChatCompletions,
+  editImageViaGeminiOfficial,
   generateImage,
   generateImageViaChatCompletions,
+  generateImageViaGeminiOfficial,
   uploadFile,
 } from './lib/api';
 
@@ -23,6 +25,17 @@ function App() {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('apiKey') || '');
   const [baseUrl, setBaseUrl] = useState(() => localStorage.getItem('baseUrl') || 'https://foxi-ai.top');
   const [modelName, setModelName] = useState(() => localStorage.getItem('modelName') || 'nano-banana-2-2k');
+
+  const [apiProvider, setApiProvider] = useState(
+    () => localStorage.getItem('apiProvider') || 'openai_compat'
+  );
+  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('geminiApiKey') || '');
+  const [geminiModelName, setGeminiModelName] = useState(
+    () => localStorage.getItem('geminiModelName') || 'gemini-2.5-flash-image'
+  );
+  const [geminiImageSize, setGeminiImageSize] = useState(
+    () => localStorage.getItem('geminiImageSize') || '1K'
+  );
 
   const [mode, setMode] = useState('generate'); // 'generate' | 'edit'
   const [isDrawing, setIsDrawing] = useState(false);
@@ -61,6 +74,8 @@ function App() {
       dataUrl,
       apiKey,
       baseUrl,
+      apiProvider,
+      geminiApiKey,
       filename: 'image.png',
     });
     setImageRemoteUrl(uploaded.url);
@@ -78,6 +93,22 @@ function App() {
   React.useEffect(() => {
     localStorage.setItem('modelName', modelName);
   }, [modelName]);
+
+  React.useEffect(() => {
+    localStorage.setItem('apiProvider', apiProvider);
+  }, [apiProvider]);
+
+  React.useEffect(() => {
+    localStorage.setItem('geminiApiKey', geminiApiKey);
+  }, [geminiApiKey]);
+
+  React.useEffect(() => {
+    localStorage.setItem('geminiModelName', geminiModelName);
+  }, [geminiModelName]);
+
+  React.useEffect(() => {
+    localStorage.setItem('geminiImageSize', geminiImageSize);
+  }, [geminiImageSize]);
 
   React.useEffect(() => {
     localStorage.setItem('imageSize', imageSize);
@@ -197,15 +228,37 @@ function App() {
   };
 
   const handleGenerate = async () => {
-    if (!apiKey) {
-      alert('请先在设置中填写 API Key');
-      return;
+    if (apiProvider === 'gemini_official') {
+      if (!geminiApiKey) {
+        alert('请先在设置中填写 Gemini API Key');
+        return;
+      }
+    } else {
+      if (!apiKey) {
+        alert('请先在设置中填写 API Key');
+        return;
+      }
     }
 
     setIsGenerating(true);
     try {
       if (mode === 'generate') {
-        if (isChatImageModel(modelName)) {
+        if (apiProvider === 'gemini_official') {
+          const { mimeType, base64 } = await generateImageViaGeminiOfficial({
+            prompt,
+            apiKey: geminiApiKey,
+            model: geminiModelName,
+            aspectRatio,
+            imageSize: geminiImageSize,
+          });
+          setImageMimeType(mimeType || 'image/png');
+          setImageBase64(base64);
+          setImageUrl(`data:${mimeType || 'image/png'};base64,${base64}`);
+          setImageRemoteUrl(null);
+          setMode('edit');
+          setDrawMode('brush');
+          setIsDrawing(true);
+        } else if (isChatImageModel(modelName)) {
           const { mimeType, base64 } = await generateImageViaChatCompletions({
             prompt,
             apiKey,
@@ -250,7 +303,24 @@ function App() {
         const maskBase64 = buildMaskBase64();
 
         let resultImage = null;
-        if (isChatImageModel(modelName)) {
+        if (apiProvider === 'gemini_official') {
+          const { mimeType, base64 } = await editImageViaGeminiOfficial({
+            imageBase64,
+            imageMimeType,
+            maskBase64,
+            prompt,
+            apiKey: geminiApiKey,
+            model: geminiModelName,
+            aspectRatio,
+            imageSize: geminiImageSize,
+          });
+          setImageMimeType(mimeType || 'image/png');
+          setImageBase64(base64);
+          setImageUrl(`data:${mimeType || 'image/png'};base64,${base64}`);
+          setImageRemoteUrl(null);
+          clearMaskObjects();
+          return;
+        } else if (isChatImageModel(modelName)) {
           // 关键：先把当前图片上传成 URL，再调用大模型（chat/completions）
           const imageUrlForModel = await ensureCurrentImageRemoteUrl();
           if (!imageUrlForModel) throw new Error('缺少图片数据');
@@ -355,12 +425,20 @@ function App() {
           setPrompt={setPrompt}
           onGenerate={handleGenerate}
           isGenerating={isGenerating}
+          apiProvider={apiProvider}
+          setApiProvider={setApiProvider}
           apiKey={apiKey}
           setApiKey={setApiKey}
           baseUrl={baseUrl}
           setBaseUrl={setBaseUrl}
           modelName={modelName}
           setModelName={setModelName}
+          geminiApiKey={geminiApiKey}
+          setGeminiApiKey={setGeminiApiKey}
+          geminiModelName={geminiModelName}
+          setGeminiModelName={setGeminiModelName}
+          geminiImageSize={geminiImageSize}
+          setGeminiImageSize={setGeminiImageSize}
           mode={mode}
           setMode={setMode}
           imageSize={imageSize}

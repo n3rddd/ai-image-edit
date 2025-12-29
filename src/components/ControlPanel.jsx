@@ -8,12 +8,20 @@ export function ControlPanel({
     setPrompt,
     onGenerate,
     isGenerating,
+    apiProvider,
+    setApiProvider,
     apiKey,
     setApiKey,
     baseUrl,
     setBaseUrl,
     modelName,
     setModelName,
+    geminiApiKey,
+    setGeminiApiKey,
+    geminiModelName,
+    setGeminiModelName,
+    geminiImageSize,
+    setGeminiImageSize,
     mode,
     setMode,
     imageSize,
@@ -86,6 +94,11 @@ export function ControlPanel({
         return [...defaultModels, ...customModels];
     };
 
+    const geminiModelOptions = [
+        { value: 'gemini-2.5-flash-image', label: 'Nano Banana（gemini-2.5-flash-image）' },
+        { value: 'gemini-3-pro-image-preview', label: 'Nano Banana Pro（gemini-3-pro-image-preview）' },
+    ];
+
     const copyToClipboard = async (text) => {
         if (!text) return false;
         try {
@@ -134,83 +147,126 @@ export function ControlPanel({
             {showSettings && (
                 <div className="flex flex-col gap-4 p-4 bg-white/50 rounded-ios-md border border-white/60 shadow-sm animate-in fade-in slide-in-from-top-2">
                     <div className="space-y-2">
-                        <label className="text-xs font-bold uppercase tracking-widest text-slate-500">API Key</label>
-                        <input
-                            type="password"
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                            placeholder="sk-..."
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold uppercase tracking-widest text-slate-500">接口地址</label>
-                        <input
-                            type="text"
-                            value={baseUrl}
-                            onChange={(e) => setBaseUrl(e.target.value)}
-                            className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                            placeholder="https://..."
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold uppercase tracking-widest text-slate-500">模型名称</label>
+                        <label className="text-xs font-bold uppercase tracking-widest text-slate-500">接口类型</label>
                         <select
-                            value={modelName}
-                            onChange={(e) => setModelName(e.target.value)}
+                            value={apiProvider}
+                            onChange={(e) => setApiProvider?.(e.target.value)}
                             className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                         >
-                            {getAllModels().map(model => (
-                                <option key={model} value={model}>{model}</option>
-                            ))}
+                            <option value="openai_compat">第三方中转（OpenAI 兼容）</option>
+                            <option value="gemini_official">Gemini 官方</option>
                         </select>
-                        
-                        {/* 自定义模型管理 */}
-                        <div className="mt-3 space-y-2">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold uppercase tracking-widest text-slate-500">自定义模型</span>
+                    </div>
+
+                    {apiProvider === 'gemini_official' ? (
+                        <>
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">Gemini API Key</label>
+                                <input
+                                    type="password"
+                                    value={geminiApiKey}
+                                    onChange={(e) => setGeminiApiKey?.(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                                    placeholder="AIza..."
+                                />
                             </div>
-                            
-                            {/* 添加新模型 */}
-                            <div className="flex gap-2">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">Gemini 模型</label>
+                                <select
+                                    value={geminiModelName}
+                                    onChange={(e) => setGeminiModelName?.(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                                >
+                                    {geminiModelOptions.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                            {opt.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">API Key</label>
+                                <input
+                                    type="password"
+                                    value={apiKey}
+                                    onChange={(e) => setApiKey(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                                    placeholder="sk-..."
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">接口地址</label>
                                 <input
                                     type="text"
-                                    value={newModelName}
-                                    onChange={(e) => setNewModelName(e.target.value)}
-                                    onKeyPress={(e) => e.key === 'Enter' && addCustomModel()}
-                                    className="flex-1 px-2 py-1 bg-white/80 rounded border border-gray-200 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                                    placeholder="输入模型名称"
+                                    value={baseUrl}
+                                    onChange={(e) => setBaseUrl(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                                    placeholder="https://..."
                                 />
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={addCustomModel}
-                                    className="px-2 py-1 h-auto"
-                                >
-                                    <Plus size={14} />
-                                </Button>
                             </div>
-                            
-                            {/* 显示自定义模型列表 */}
-                            {customModels.length > 0 && (
-                                <div className="space-y-1 max-h-24 overflow-y-auto">
-                                    {customModels.map(model => (
-                                        <div key={model} className="flex items-center justify-between bg-white/50 rounded px-2 py-1">
-                                            <span className="text-xs text-slate-700 flex-1 truncate">{model}</span>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => removeCustomModel(model)}
-                                                className="px-1 py-0 h-auto text-red-500 hover:text-red-700"
-                                            >
-                                                <X size={12} />
-                                            </Button>
-                                        </div>
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">模型名称</label>
+                                <select
+                                    value={modelName}
+                                    onChange={(e) => setModelName(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                                >
+                                    {getAllModels().map(model => (
+                                        <option key={model} value={model}>{model}</option>
                                     ))}
+                                </select>
+
+                                {/* 自定义模型管理 */}
+                                <div className="mt-3 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold uppercase tracking-widest text-slate-500">自定义模型</span>
+                                    </div>
+
+                                    {/* 添加新模型 */}
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={newModelName}
+                                            onChange={(e) => setNewModelName(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && addCustomModel()}
+                                            className="flex-1 px-2 py-1 bg-white/80 rounded border border-gray-200 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                                            placeholder="输入模型名称"
+                                        />
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={addCustomModel}
+                                            className="px-2 py-1 h-auto"
+                                        >
+                                            <Plus size={14} />
+                                        </Button>
+                                    </div>
+
+                                    {/* 显示自定义模型列表 */}
+                                    {customModels.length > 0 && (
+                                        <div className="space-y-1 max-h-24 overflow-y-auto">
+                                            {customModels.map(model => (
+                                                <div key={model} className="flex items-center justify-between bg-white/50 rounded px-2 py-1">
+                                                    <span className="text-xs text-slate-700 flex-1 truncate">{model}</span>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => removeCustomModel(model)}
+                                                        className="px-1 py-0 h-auto text-red-500 hover:text-red-700"
+                                                    >
+                                                        <X size={12} />
+                                                    </Button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>
-                    </div>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
 
@@ -240,15 +296,27 @@ export function ControlPanel({
                     <>
                         <div className="space-y-2">
                             <label className="text-xs font-bold uppercase tracking-widest text-slate-500">图片尺寸</label>
-                            <select
-                                value={imageSize}
-                                onChange={(e) => setImageSize(e.target.value)}
-                                className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-                            >
-                                <option value="1024x1024">1K（1024×1024）</option>
-                                <option value="2048x2048">2K（2048×2048）</option>
-                                <option value="4096x4096">4K（4096×4096）</option>
-                            </select>
+                            {apiProvider === 'gemini_official' ? (
+                                <select
+                                    value={geminiImageSize}
+                                    onChange={(e) => setGeminiImageSize?.(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                                >
+                                    <option value="1K">1K</option>
+                                    <option value="2K">2K</option>
+                                    <option value="4K">4K</option>
+                                </select>
+                            ) : (
+                                <select
+                                    value={imageSize}
+                                    onChange={(e) => setImageSize(e.target.value)}
+                                    className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                                >
+                                    <option value="1024x1024">1K（1024×1024）</option>
+                                    <option value="2048x2048">2K（2048×2048）</option>
+                                    <option value="4096x4096">4K（4096×4096）</option>
+                                </select>
+                            )}
                         </div>
 
                         <div className="space-y-2">
