@@ -123,7 +123,7 @@ export async function uploadFile({ dataUrl, apiKey, baseUrl, filename = 'upload.
  * Extract base64 image from Gemini Native API response
  * Response format: { candidates: [{ content: { parts: [{ inlineData: { mimeType, data } }] } }] }
  */
-const extractBase64ImageFromGeminiNative = (payload) => {
+const extractBase64ImageFromGeminiNative = async (payload) => {
     try {
         // Try to extract from candidates[0].content.parts
         const parts = payload?.candidates?.[0]?.content?.parts;
@@ -148,15 +148,46 @@ const extractBase64ImageFromGeminiNative = (payload) => {
                     // Check if it's a markdown image link
                     const markdownMatch = text.match(/!\[.*?\]\((https?:\/\/[^)]+)\)/);
                     if (markdownMatch) {
-                        // For now, we can't fetch external URLs, so return null
-                        // In the future, we could fetch and convert to base64
-                        console.warn('Gemini returned external image URL:', markdownMatch[1]);
+                        const imageUrl = markdownMatch[1];
+                        console.log('Gemini returned external image URL, downloading:', imageUrl);
+
+                        try {
+                            // Fetch the image from URL
+                            const response = await fetch(imageUrl);
+                            if (!response.ok) {
+                                throw new Error(`Failed to fetch image: ${response.statusText}`);
+                            }
+
+                            // Convert to blob
+                            const blob = await response.blob();
+
+                            // Convert blob to base64
+                            const base64 = await new Promise((resolve, reject) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                    const dataUrl = reader.result;
+                                    const base64Data = dataUrl.split(',')[1];
+                                    resolve(base64Data);
+                                };
+                                reader.onerror = reject;
+                                reader.readAsDataURL(blob);
+                            });
+
+                            return {
+                                mimeType: blob.type || 'image/jpeg',
+                                base64: base64
+                            };
+                        } catch (fetchError) {
+                            console.error('Failed to download image from URL:', fetchError);
+                            throw new Error(`无法下载图片: ${fetchError.message}`);
+                        }
                     }
                 }
             }
         }
     } catch (err) {
         console.error('Error extracting image from Gemini native response:', err);
+        throw err;
     }
 
     return null;
@@ -278,7 +309,7 @@ export async function generateImage({ prompt, aspectRatio = '1:1', apiKey, baseU
         const data = await response.json();
 
         // Extract image from Gemini native response
-        const extracted = extractBase64ImageFromGeminiNative(data);
+        const extracted = await extractBase64ImageFromGeminiNative(data);
         if (!extracted) throw new Error('生成失败：未从响应中解析到图片数据');
 
         return {
@@ -340,10 +371,23 @@ export async function generateImage({ prompt, aspectRatio = '1:1', apiKey, baseU
  * 说明：不同服务商返回图片的字段可能不同，这里做了尽可能兼容的解析。
  * 支持 Gemini 原生格式和 OpenAI 格式
  */
-export async function generateImageViaChatCompletions({ prompt, apiKey, baseUrl, model, aspectRatio = '1:1', imageSize = '', useGeminiNative = false }) {
+export async function generateImageViaChatCompletions({ prompt, apiKey, baseUrl, model, aspectRatio = '1:1', imageSize = '', useGeminiNative = false, referenceImages = [] }) {
     if (useGeminiNative) {
         // Gemini Native API format
         const url = `${baseUrl || API_CONFIG.baseUrl}/v1beta/models/${model}:generateContent`;
+
+        // 构建 parts 数组
+        const parts = [{ text: prompt }];
+
+        // 添加参考图
+        referenceImages.forEach(ref => {
+            parts.push({
+                inlineData: {
+                    mimeType: ref.mimeType,
+                    data: ref.base64
+                }
+            });
+        });
 
         const response = await fetchWithTimeout(url, {
             method: 'POST',
@@ -355,14 +399,14 @@ export async function generateImageViaChatCompletions({ prompt, apiKey, baseUrl,
                 contents: [
                     {
                         role: "user",
-                        parts: [{ text: prompt }]
+                        parts: parts
                     }
                 ],
                 generationConfig: {
                     responseModalities: ["image"],
                     imageConfig: {
                         aspectRatio: aspectRatio,
-                        imageSize: "800:800"
+                        imageSize: imageSize || "800:800"
                     }
                 }
             })
@@ -374,12 +418,23 @@ export async function generateImageViaChatCompletions({ prompt, apiKey, baseUrl,
         }
 
         const data = await response.json();
-        const extracted = extractBase64ImageFromGeminiNative(data);
+        const extracted = await extractBase64ImageFromGeminiNative(data);
         if (!extracted) throw new Error('生成失败：未从响应中解析到图片数据');
         return extracted; // { mimeType, base64 }
     } else {
         // OpenAI format
         const url = `${baseUrl || API_CONFIG.baseUrl}/v1/chat/completions`;
+
+        // Build content array with prompt and reference images
+        const content = [{ type: 'text', text: prompt }];
+
+        // Add reference images
+        referenceImages.forEach(ref => {
+            content.push({
+                type: 'image_url',
+                image_url: { url: `data:${ref.mimeType};base64,${ref.base64}` }
+            });
+        });
 
         // Build request body
         const requestBody = {
@@ -388,7 +443,7 @@ export async function generateImageViaChatCompletions({ prompt, apiKey, baseUrl,
             messages: [
                 {
                     role: 'user',
-                    content: [{ type: 'text', text: prompt }]
+                    content: content
                 }
             ]
         };
@@ -441,7 +496,7 @@ export async function generateImageViaChatCompletions({ prompt, apiKey, baseUrl,
 /**
  * Edit image using Gemini Native API format
  */
-async function editImageViaGeminiNative({ imageDataUrl, maskDataUrl, prompt, apiKey, baseUrl, model }) {
+async function editImageViaGeminiNative({ imageDataUrl, maskDataUrl, prompt, apiKey, baseUrl, model, referenceImages = [], aspectRatio = '1:1', imageSize = '' }) {
     const url = `${baseUrl || API_CONFIG.baseUrl}/v1beta/models/${model}:generateContent`;
 
     // 解析图片数据
@@ -472,6 +527,16 @@ async function editImageViaGeminiNative({ imageDataUrl, maskDataUrl, prompt, api
         }
     }
 
+    // 添加参考图
+    referenceImages.forEach(ref => {
+        parts.push({
+            inlineData: {
+                mimeType: ref.mimeType,
+                data: ref.base64
+            }
+        });
+    });
+
     const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers: {
@@ -484,7 +549,11 @@ async function editImageViaGeminiNative({ imageDataUrl, maskDataUrl, prompt, api
                 parts: parts
             }],
             generationConfig: {
-                responseModalities: ["image"]
+                responseModalities: ["image"],
+                imageConfig: {
+                    aspectRatio: aspectRatio,
+                    imageSize: imageSize || "1024x1024"
+                }
             }
         })
     });
@@ -495,16 +564,16 @@ async function editImageViaGeminiNative({ imageDataUrl, maskDataUrl, prompt, api
     }
 
     const data = await response.json();
-    const extracted = extractBase64ImageFromGeminiNative(data);
+    const extracted = await extractBase64ImageFromGeminiNative(data);
     if (!extracted) throw new Error('编辑失败：未从响应中解析到图片数据');
 
     return extracted; // { mimeType, base64 }
 }
 
-export async function editImageViaChatCompletions({ imageDataUrl, maskDataUrl, prompt, apiKey, baseUrl, model, useGeminiNative = false }) {
+export async function editImageViaChatCompletions({ imageDataUrl, maskDataUrl, prompt, apiKey, baseUrl, model, useGeminiNative = false, referenceImages = [], aspectRatio = '1:1', imageSize = '' }) {
     // 如果使用 Gemini 原生格式，调用专门的函数
     if (useGeminiNative) {
-        return editImageViaGeminiNative({ imageDataUrl, maskDataUrl, prompt, apiKey, baseUrl, model });
+        return editImageViaGeminiNative({ imageDataUrl, maskDataUrl, prompt, apiKey, baseUrl, model, referenceImages, aspectRatio, imageSize });
     }
 
     // 否则使用 OpenAI 格式
@@ -543,6 +612,14 @@ export async function editImageViaChatCompletions({ imageDataUrl, maskDataUrl, p
             { type: 'image_url', image_url: { url: imageDataUrl } },
         ];
     }
+
+    // 添加参考图到 content 数组
+    referenceImages.forEach(ref => {
+        content.push({
+            type: 'image_url',
+            image_url: { url: `data:${ref.mimeType};base64,${ref.base64}` }
+        });
+    });
 
     const response = await fetchWithTimeout(url, {
         method: 'POST',

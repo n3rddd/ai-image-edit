@@ -20,6 +20,8 @@ export function CanvasEditor({
     onSelectLayer,
     onDeleteLayer,
     onAddLayer,
+    isSelectingReference,
+    onAddReferenceImage,
 }) {
     const canvasRef = useRef(null);
     const containerRef = useRef(null);
@@ -586,12 +588,23 @@ export function CanvasEditor({
             updateCursor();
         };
 
+        const onMouseUp = (e) => {
+            // 鼠标中键释放时停止拖动
+            if (e.button === 1 && isPanningRef.current) {
+                isPanningRef.current = false;
+                lastPanClientRef.current = null;
+                updateCursor();
+            }
+        };
+
         window.addEventListener('keydown', onKeyDown, { passive: false });
         window.addEventListener('keyup', onKeyUp);
+        window.addEventListener('mouseup', onMouseUp);
         updateCursor();
         return () => {
             window.removeEventListener('keydown', onKeyDown);
             window.removeEventListener('keyup', onKeyUp);
+            window.removeEventListener('mouseup', onMouseUp);
         };
     }, [fabricCanvas, drawMode, isDrawing]);
 
@@ -1132,7 +1145,9 @@ export function CanvasEditor({
         }
 
         nextHandlers.mouseDown = (e) => {
-            if (spacePressedRef.current) {
+            // 鼠标中键（滚轮按下）或空格键 + 左键：拖动画布
+            if (e.e.button === 1 || spacePressedRef.current) {
+                e.e.preventDefault(); // 阻止中键的默认行为（滚动）
                 startPanning(e.e);
                 viewModeRef.current = 'manual';
                 return;
@@ -1256,14 +1271,46 @@ export function CanvasEditor({
         const handleSelectionCreated = (e) => {
             const selected = e.selected?.[0];
             if (selected && selected.layerId) {
-                onSelectLayer(selected.layerId);
+                // 如果处于参考图选择模式，将选中的图层添加为参考图
+                if (isSelectingReference && onAddReferenceImage) {
+                    const layer = layers.find(l => l.id === selected.layerId);
+                    if (layer) {
+                        onAddReferenceImage({
+                            url: layer.url,
+                            base64: layer.base64,
+                            mimeType: layer.mimeType,
+                            name: layer.name,
+                        });
+                        // 添加后立即取消选中，允许继续选择其他图层
+                        fabricCanvas.discardActiveObject();
+                        fabricCanvas.requestRenderAll();
+                    }
+                } else {
+                    onSelectLayer(selected.layerId);
+                }
             }
         };
 
         const handleSelectionUpdated = (e) => {
             const selected = e.selected?.[0];
             if (selected && selected.layerId) {
-                onSelectLayer(selected.layerId);
+                // 参考图选择模式下添加参考图并取消选中
+                if (isSelectingReference && onAddReferenceImage) {
+                    const layer = layers.find(l => l.id === selected.layerId);
+                    if (layer) {
+                        onAddReferenceImage({
+                            url: layer.url,
+                            base64: layer.base64,
+                            mimeType: layer.mimeType,
+                            name: layer.name,
+                        });
+                        // 添加后立即取消选中，允许继续选择其他图层
+                        fabricCanvas.discardActiveObject();
+                        fabricCanvas.requestRenderAll();
+                    }
+                } else {
+                    onSelectLayer(selected.layerId);
+                }
             }
         };
 
@@ -1280,7 +1327,7 @@ export function CanvasEditor({
             fabricCanvas.off('selection:updated', handleSelectionUpdated);
             fabricCanvas.off('selection:cleared', handleSelectionCleared);
         };
-    }, [fabricCanvas, onSelectLayer]);
+    }, [fabricCanvas, onSelectLayer, isSelectingReference, onAddReferenceImage, layers]);
 
     // Sync layer panel selection to canvas selection
     useEffect(() => {

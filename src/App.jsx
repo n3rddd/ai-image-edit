@@ -42,6 +42,10 @@ function App() {
 
   const [imageSize, setImageSize] = useState(() => localStorage.getItem('imageSize') || '1024x1024');
   const [aspectRatio, setAspectRatio] = useState(() => localStorage.getItem('aspectRatio') || '1:1');
+  const [generateCount, setGenerateCount] = useState(() => {
+    const saved = localStorage.getItem('generateCount');
+    return saved ? parseInt(saved) : 1;
+  });
 
   // 抠图相关
   const [isRemoving, setIsRemoving] = useState(false);
@@ -52,9 +56,88 @@ function App() {
   const [mainLayerForMask, setMainLayerForMask] = useState(null);
   const [maskLayerForExtraction, setMaskLayerForExtraction] = useState(null);
 
+  // 参考图相关
+  const [referenceImages, setReferenceImages] = useState([]); // 参考图数组，最多15张
+  const [isSelectingReference, setIsSelectingReference] = useState(false); // 是否处于参考图选择模式
+  const nextReferenceIdRef = useRef(1);
+
+  // 编辑模式：是否保留原图
+  const [keepOriginal, setKeepOriginal] = useState(() => {
+    const saved = localStorage.getItem('keepOriginal');
+    return saved === null ? true : saved === 'true'; // 默认勾选
+  });
+
   const canvasRef = useRef(null);
   const [regions, setRegions] = useState([]);
   const [regionInstructions, setRegionInstructions] = useState({});
+
+  // 计算最大公约数
+  const gcd = (a, b) => {
+    return b === 0 ? a : gcd(b, a % b);
+  };
+
+  // 计算最接近的宽高比
+  const findClosestAspectRatio = (width, height) => {
+    const divisor = gcd(width, height);
+    const ratioW = width / divisor;
+    const ratioH = height / divisor;
+    const ratio = `${ratioW}:${ratioH}`;
+
+    // 预设的宽高比列表
+    const presets = ['1:1', '16:9', '9:16', '4:3', '3:4', '21:9', '9:21', '3:2', '2:3', '5:4', '4:5'];
+
+    // 如果计算出的比例在预设中，直接返回
+    if (presets.includes(ratio)) {
+      return ratio;
+    }
+
+    // 否则找最接近的预设比例
+    const targetRatio = width / height;
+    let closestRatio = '1:1';
+    let minDiff = Math.abs(targetRatio - 1);
+
+    for (const preset of presets) {
+      const [w, h] = preset.split(':').map(Number);
+      const presetRatio = w / h;
+      const diff = Math.abs(targetRatio - presetRatio);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestRatio = preset;
+      }
+    }
+
+    return closestRatio;
+  };
+
+  // 当选中图层变化时，在编辑模式下自动同步图层尺寸到UI
+  React.useEffect(() => {
+    if (mode === 'edit' && selectedLayerId) {
+      const selectedLayer = layers.find(l => l.id === selectedLayerId);
+      if (selectedLayer && selectedLayer.width && selectedLayer.height) {
+        const { width, height } = selectedLayer;
+
+        // 设置自定义尺寸
+        const customSizeStr = `${width}:${height}`;
+
+        // 检查是否匹配预设尺寸
+        const presetSizes = ['1024x1024', '2048x2048', '4096x4096'];
+        const matchedPreset = presetSizes.find(preset => {
+          const [w, h] = preset.split('x').map(Number);
+          return w === width && h === height;
+        });
+
+        if (matchedPreset) {
+          setImageSize(matchedPreset);
+        } else {
+          setImageSize(customSizeStr);
+        }
+
+        // 计算并设置最接近的宽高比
+        const closestRatio = findClosestAspectRatio(width, height);
+        setAspectRatio(closestRatio);
+      }
+    }
+  }, [selectedLayerId, layers, mode]);
 
   // 添加新图层
   const addLayer = React.useCallback(async (layerData) => {
@@ -129,6 +212,44 @@ function App() {
       return newLayers;
     });
   };
+
+  // 参考图管理函数
+  // 添加参考图（文生图模式：上传文件；编辑模式：从图层选择）
+  const addReferenceImage = React.useCallback(async (imageData) => {
+    let limitReached = false;
+
+    setReferenceImages(prev => {
+      if (prev.length >= 15) {
+        limitReached = true;
+        return prev;
+      }
+
+      const newReference = {
+        id: nextReferenceIdRef.current++,
+        url: imageData.url,
+        base64: imageData.base64,
+        mimeType: imageData.mimeType,
+        name: imageData.name || `参考图 ${nextReferenceIdRef.current - 1}`,
+      };
+
+      return [...prev, newReference];
+    });
+
+    // 在状态更新后显示提示
+    if (limitReached) {
+      setTimeout(() => alert('最多只能添加 15 张参考图'), 0);
+    }
+  }, []);
+
+  // 删除参考图
+  const deleteReferenceImage = React.useCallback((refId) => {
+    setReferenceImages(prev => prev.filter(r => r.id !== refId));
+  }, []);
+
+  // 清空所有参考图
+  const clearReferenceImages = React.useCallback(() => {
+    setReferenceImages([]);
+  }, []);
 
   // 复制图层
   const duplicateLayer = React.useCallback((layerId) => {
@@ -361,6 +482,14 @@ function App() {
     localStorage.setItem('useGeminiNative', useGeminiNative);
   }, [useGeminiNative]);
 
+  React.useEffect(() => {
+    localStorage.setItem('generateCount', generateCount);
+  }, [generateCount]);
+
+  React.useEffect(() => {
+    localStorage.setItem('keepOriginal', keepOriginal);
+  }, [keepOriginal]);
+
   // 快捷键处理
   React.useEffect(() => {
     const handleKeyDown = (e) => {
@@ -489,6 +618,9 @@ function App() {
             baseUrl,
             model: modelName,
             useGeminiNative, // 添加 Gemini 原生格式支持
+            referenceImages, // 添加参考图
+            aspectRatio, // 添加宽高比
+            imageSize, // 添加图片尺寸
           });
           resultDataUrl = `data:${result.mimeType};base64,${result.base64}`;
         } else {
@@ -510,31 +642,73 @@ function App() {
           resultDataUrl = `data:image/png;base64,${firstImage.b64_json}`;
         }
       } else {
-        // 生成模式：生成新图片
-        if (isChatImageModel(modelName)) {
-          const result = await generateImageViaChatCompletions({
-            prompt,
-            apiKey,
-            baseUrl,
-            model: modelName,
-            aspectRatio,
-            imageSize,
-            useGeminiNative,
-          });
-          resultDataUrl = `data:${result.mimeType};base64,${result.base64}`;
-        } else {
-          const result = await generateImage({
-            prompt,
-            apiKey,
-            baseUrl,
-            model: modelName,
-            size: imageSize,
-            aspectRatio,
-            useGeminiNative,
-          });
-          const firstImage = result?.data?.[0];
-          if (!firstImage?.b64_json) throw new Error('生成失败：未返回图片数据');
-          resultDataUrl = `data:image/png;base64,${firstImage.b64_json}`;
+        // 生成模式：批量生成新图片
+        const count = mode === 'generate' ? generateCount : 1;
+        const generatedImages = [];
+
+        for (let i = 0; i < count; i++) {
+          if (isChatImageModel(modelName)) {
+            const result = await generateImageViaChatCompletions({
+              prompt,
+              apiKey,
+              baseUrl,
+              model: modelName,
+              aspectRatio,
+              imageSize,
+              useGeminiNative,
+              referenceImages, // 添加参考图
+            });
+            generatedImages.push(`data:${result.mimeType};base64,${result.base64}`);
+          } else {
+            const result = await generateImage({
+              prompt,
+              apiKey,
+              baseUrl,
+              model: modelName,
+              size: imageSize,
+              aspectRatio,
+              useGeminiNative,
+            });
+            const firstImage = result?.data?.[0];
+            if (!firstImage?.b64_json) throw new Error('生成失败：未返回图片数据');
+            generatedImages.push(`data:image/png;base64,${firstImage.b64_json}`);
+          }
+        }
+
+        // 使用第一张图片作为 resultDataUrl（用于后续处理）
+        resultDataUrl = generatedImages[0];
+
+        // 如果是批量生成，保存所有生成的图片
+        if (mode === 'generate' && generatedImages.length > 1) {
+          // 批量添加所有生成的图片为新图层
+          for (let i = 0; i < generatedImages.length; i++) {
+            const dataUrl = generatedImages[i];
+            const mime = String(dataUrl).split(';')[0].split(':')[1] || 'image/png';
+            const base64 = String(dataUrl).split(',')[1];
+
+            const img = new Image();
+            img.src = dataUrl;
+            await new Promise((resolve) => { img.onload = resolve; });
+
+            await addLayer({
+              url: dataUrl,
+              base64,
+              mimeType: mime,
+              width: img.width,
+              height: img.height,
+              x: (layers.length + i) * 20,
+              y: (layers.length + i) * 20,
+              name: `生成图片 ${layers.length + i + 1}`,
+            });
+
+            // 添加延迟以确保 Fabric.js 有时间创建图层对象
+            // 这样可以避免批量生成时图层无法交互的问题
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+
+          setMode('edit');
+          setDrawMode('select'); // 自动切换到选择工具，方便用户立即拖动图层
+          return; // 批量生成完成，直接返回
         }
       }
 
@@ -547,12 +721,28 @@ function App() {
       await new Promise((resolve) => { img.onload = resolve; });
 
       if (mode === 'edit') {
-        // 编辑模式：替换选中的图层
-        setLayers(prev => prev.map(layer =>
-          layer.id === selectedLayerId
-            ? { ...layer, url: resultDataUrl, base64, mimeType: mime, width: img.width, height: img.height }
-            : layer
-        ));
+        // 编辑模式：根据 keepOriginal 决定是替换还是新建图层
+        if (keepOriginal) {
+          // 保留原图：创建新图层
+          const selectedLayer = layers.find(l => l.id === selectedLayerId);
+          await addLayer({
+            url: resultDataUrl,
+            base64,
+            mimeType: mime,
+            width: img.width,
+            height: img.height,
+            x: selectedLayer ? selectedLayer.x + 20 : 0,
+            y: selectedLayer ? selectedLayer.y + 20 : 0,
+            name: selectedLayer ? `${selectedLayer.name} (编辑)` : '编辑结果',
+          });
+        } else {
+          // 不保留原图：替换选中的图层
+          setLayers(prev => prev.map(layer =>
+            layer.id === selectedLayerId
+              ? { ...layer, url: resultDataUrl, base64, mimeType: mime, width: img.width, height: img.height }
+              : layer
+          ));
+        }
 
         // 清除画布上的遮罩绘制
         const canvas = canvasRef.current;
@@ -575,6 +765,7 @@ function App() {
         });
 
         setMode('edit');
+        setDrawMode('select'); // 自动切换到选择工具，方便用户立即拖动图层
       }
     } catch (err) {
       console.error(mode === 'edit' ? '编辑失败:' : '生成失败:', err);
@@ -747,6 +938,8 @@ function App() {
           maskLayerForExtraction={maskLayerForExtraction}
           setMaskLayerForExtraction={setMaskLayerForExtraction}
           onMaskExtraction={handleMaskExtraction}
+          isSelectingReference={isSelectingReference}
+          onAddReferenceImage={addReferenceImage}
         />
       }
       properties={
@@ -769,6 +962,8 @@ function App() {
           setImageSize={setImageSize}
           aspectRatio={aspectRatio}
           setAspectRatio={setAspectRatio}
+          generateCount={generateCount}
+          setGenerateCount={setGenerateCount}
           regions={regions}
           regionInstructions={regionInstructions}
           setRegionInstruction={(id, text) =>
@@ -785,6 +980,15 @@ function App() {
             canvas.requestRenderAll();
           }}
           onPreviewMask={handlePreviewMask}
+          referenceImages={referenceImages}
+          onAddReferenceImage={addReferenceImage}
+          onDeleteReferenceImage={deleteReferenceImage}
+          isSelectingReference={isSelectingReference}
+          setIsSelectingReference={setIsSelectingReference}
+          setDrawMode={setDrawMode}
+          layers={layers}
+          keepOriginal={keepOriginal}
+          setKeepOriginal={setKeepOriginal}
         />
       }
     >
@@ -827,6 +1031,8 @@ function App() {
           onSelectLayer={setSelectedLayerId}
           onDeleteLayer={deleteLayer}
           onAddLayer={addLayer}
+          isSelectingReference={isSelectingReference}
+          onAddReferenceImage={addReferenceImage}
         />
       </div>
     </Layout>

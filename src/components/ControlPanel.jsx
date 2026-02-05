@@ -22,11 +22,23 @@ export function ControlPanel({
     setImageSize,
     aspectRatio,
     setAspectRatio,
+    generateCount,
+    setGenerateCount,
     regions = [],
     regionInstructions = {},
     setRegionInstruction,
     focusRegion,
     onPreviewMask,
+    // 参考图相关
+    referenceImages = [],
+    onAddReferenceImage,
+    onDeleteReferenceImage,
+    isSelectingReference,
+    setIsSelectingReference,
+    setDrawMode,
+    layers = [],
+    keepOriginal,
+    setKeepOriginal,
 }) {
     const [showSettings, setShowSettings] = React.useState(false);
     const [copyHint, setCopyHint] = React.useState('');
@@ -372,8 +384,205 @@ export function ControlPanel({
                                 <option value="4:5">4:5（近方形竖向）</option>
                             </select>
                         </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">数量</label>
+                            <div className="flex gap-2">
+                                {[1, 2, 3, 4].map((count) => (
+                                    <button
+                                        key={count}
+                                        onClick={() => setGenerateCount(count)}
+                                        className={cn(
+                                            "flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                                            generateCount === count
+                                                ? "bg-gradient-to-br from-red-400 to-red-500 text-white shadow-md"
+                                                : "bg-white/80 text-gray-700 border border-gray-200 hover:bg-gray-50"
+                                        )}
+                                    >
+                                        {count}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     </>
                 )}
+
+                {mode === 'edit' && (
+                    <>
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">图片尺寸</label>
+                            <select
+                                value={imageSize}
+                                onChange={(e) => setImageSize(e.target.value)}
+                                className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                            >
+                                <option value="1024x1024">1K（1024×1024）</option>
+                                <option value="2048x2048">2K（2048×2048）</option>
+                                <option value="4096x4096">4K（4096×4096）</option>
+                                {/* 如果当前尺寸不是预设值，显示自定义选项 */}
+                                {imageSize && !['1024x1024', '2048x2048', '4096x4096'].includes(imageSize) && (
+                                    <option value={imageSize}>自定义（{imageSize.replace(':', '×')}）</option>
+                                )}
+                            </select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">自定义尺寸（可选）</label>
+                            <input
+                                type="text"
+                                value={customSize}
+                                placeholder="例如: 800:800 或留空使用上方预设"
+                                className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                                onChange={(e) => {
+                                    setCustomSize(e.target.value);
+                                    if (e.target.value.trim()) {
+                                        setImageSize(e.target.value.trim());
+                                    }
+                                }}
+                            />
+                            <p className="text-xs text-slate-400">格式: 宽:高 (如 800:800)，留空则使用上方预设</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">宽高比</label>
+                            <select
+                                value={aspectRatio}
+                                onChange={(e) => setAspectRatio(e.target.value)}
+                                className="w-full px-3 py-2 bg-white/80 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                            >
+                                <option value="1:1">1:1（方形）</option>
+                                <option value="16:9">16:9（宽屏横向）</option>
+                                <option value="9:16">9:16（手机竖向）</option>
+                                <option value="4:3">4:3（传统横向）</option>
+                                <option value="3:4">3:4（传统竖向）</option>
+                                <option value="21:9">21:9（超宽屏）</option>
+                                <option value="9:21">9:21（超长竖向）</option>
+                                <option value="3:2">3:2（相机横向）</option>
+                                <option value="2:3">2:3（相机竖向）</option>
+                                <option value="5:4">5:4（近方形横向）</option>
+                                <option value="4:5">4:5（近方形竖向）</option>
+                            </select>
+                        </div>
+                    </>
+                )}
+
+                {/* 编辑模式：保留原图选项 */}
+                {mode === 'edit' && (
+                    <div className="space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={keepOriginal}
+                                onChange={(e) => setKeepOriginal(e.target.checked)}
+                                className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                            />
+                            <span className="text-sm text-gray-700 dark:text-gray-300">
+                                保留原图（生成结果作为新图层）
+                            </span>
+                        </label>
+                        <p className="text-xs text-slate-400 ml-6">
+                            勾选后，AI 生成的图片将作为新图层添加，原图层保持不变
+                        </p>
+                    </div>
+                )}
+
+                {/* 参考图区域 */}
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                            参考图 ({referenceImages.length}/15)
+                        </label>
+                        <div className="flex items-center gap-2">
+                            {mode === 'generate' && (
+                                <label className="cursor-pointer text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1 transition-colors">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        className="hidden"
+                                        onChange={async (e) => {
+                                            const files = Array.from(e.target.files || []);
+                                            let addedCount = 0;
+
+                                            for (const file of files) {
+                                                // 检查是否已达到上限
+                                                if (referenceImages.length + addedCount >= 15) {
+                                                    alert(`最多只能添加 15 张参考图，已添加 ${addedCount} 张`);
+                                                    break;
+                                                }
+
+                                                const dataUrl = await new Promise((resolve) => {
+                                                    const reader = new FileReader();
+                                                    reader.onload = () => resolve(reader.result);
+                                                    reader.readAsDataURL(file);
+                                                });
+                                                const mime = dataUrl.split(';')[0].split(':')[1];
+                                                const base64 = dataUrl.split(',')[1];
+                                                onAddReferenceImage?.({ url: dataUrl, base64, mimeType: mime, name: file.name });
+                                                addedCount++;
+                                            }
+                                            e.target.value = '';
+                                        }}
+                                    />
+                                    <Plus size={14} />
+                                    添加
+                                </label>
+                            )}
+                            {mode === 'edit' && (
+                                <button
+                                    onClick={() => {
+                                        const newState = !isSelectingReference;
+                                        setIsSelectingReference?.(newState);
+                                        // 进入参考图选择模式时，自动切换到选择工具
+                                        if (newState && setDrawMode) {
+                                            setDrawMode('select');
+                                        }
+                                    }}
+                                    className={cn(
+                                        "text-xs flex items-center gap-1 transition-colors",
+                                        isSelectingReference
+                                            ? "text-red-500 hover:text-red-600"
+                                            : "text-blue-500 hover:text-blue-600"
+                                    )}
+                                >
+                                    {isSelectingReference ? (
+                                        <>
+                                            <X size={14} />
+                                            取消选择
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Plus size={14} />
+                                            选择参考图
+                                        </>
+                                    )}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* 参考图缩略图预览 */}
+                    {referenceImages.length > 0 && (
+                        <div className="grid grid-cols-3 gap-2 p-2 bg-white/40 backdrop-blur-sm rounded-ios-md border border-white/60">
+                            {referenceImages.map((ref) => (
+                                <div key={ref.id} className="relative group">
+                                    <img
+                                        src={ref.url}
+                                        alt={ref.name}
+                                        className="w-full h-20 object-cover rounded-md border border-gray-200"
+                                    />
+                                    <button
+                                        onClick={() => onDeleteReferenceImage?.(ref.id)}
+                                        className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600"
+                                        title="删除参考图"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
 
                 <div className="space-y-2">
                     <div className="flex items-center justify-between">

@@ -47,6 +47,8 @@ export function LayerPanel({
     maskLayerForExtraction,
     setMaskLayerForExtraction,
     onMaskExtraction,
+    isSelectingReference = false,
+    onAddReferenceImage,
 }) {
     const [editingId, setEditingId] = useState(null);
     const [editingName, setEditingName] = useState('');
@@ -232,7 +234,15 @@ export function LayerPanel({
                                     index % 2 === 1 && !isSelected && !isMainLayer && !isMaskLayer && 'bg-black/[0.015] dark:bg-white/[0.02]'
                                 )}
                                 onClick={() => {
-                                    if (maskExtractionMode) {
+                                    if (isSelectingReference && onAddReferenceImage) {
+                                        // 参考图选择模式：点击图层添加为参考图
+                                        onAddReferenceImage({
+                                            url: layer.url,
+                                            base64: layer.base64,
+                                            mimeType: layer.mimeType,
+                                            name: layer.name,
+                                        });
+                                    } else if (maskExtractionMode) {
                                         // 遮罩抠图模式：第一次点击选择主图层，第二次点击选择遮罩图层
                                         if (!mainLayerForMask) {
                                             setMainLayerForMask?.(layer.id);
